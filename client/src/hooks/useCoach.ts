@@ -104,6 +104,12 @@ export function useCoach() {
           break;
       }
 
+      // Tareas base que aplican todo el día
+      const baseTasks: DailyTask[] = [
+        { id: 'h1', label: '3+ Litros de agua', time: 'Todo el día', completed: false, type: 'water' },
+        { id: 's1', label: 'Dormir 7+ horas', time: '22:00 - 5:00', completed: false, type: 'sleep' },
+      ];
+
       // Lógica de Bloques del Día
       if (hour >= 5 && hour < 12) {
         block = 'morning';
@@ -112,34 +118,44 @@ export function useCoach() {
           ? 'Domingo de estrategia. Prepara tu mente para la semana.' 
           : 'La disciplina empieza temprano. A darle a los fierros.';
         
-        // En la mañana mostramos el desglose completo del entreno
+        // En la mañana: entrenamiento + ayuno activo
         tasks = [
           ...workoutTasks,
-          { id: 'm1', label: 'Ayuno activo (Solo agua/café)', time: 'Hasta 2:00 PM', completed: false, type: 'meal' },
+          { id: 'ayuno', label: 'Mantener ayuno (solo agua/café)', time: 'Hasta 14:00', completed: false, type: 'meal' },
+          ...baseTasks,
         ];
       } else if (hour >= 12 && hour < 18) {
         block = 'afternoon';
         greeting = 'Seguimos, Ritch.';
         message = 'Mantén el enfoque. Comida 1 es tu combustible.';
         tasks = [
-          { id: 'm2', label: 'Romper Ayuno (Huevos + Frijoles)', time: '14:00', completed: false, type: 'meal' },
-          { id: 'w_check', label: `Hoy toca: ${todayWorkout}`, time: '6:00 AM', completed: false, type: 'workout' },
-          { id: 'h1', label: '2 Litros de agua', time: 'Todo el día', completed: false, type: 'water' },
+          { id: 'w_check', label: `Entreno: ${todayWorkout}`, time: '6:00 AM', completed: false, type: 'workout' },
+          { id: 'm1', label: 'Comida 1: 5 huevos + frijoles + verduras', time: '14:00 - 15:00', completed: false, type: 'meal' },
+          { id: 'no_snack', label: 'Sin snacks entre comidas', time: '15:00 - 19:00', completed: false, type: 'meal' },
+          { id: 'm2', label: 'Comida 2: 350g pollo + verduras', time: '19:00 - 20:00', completed: false, type: 'meal' },
+          ...baseTasks,
         ];
       } else if (hour >= 18 && hour < 22) {
         block = 'evening';
         greeting = 'Recta final.';
-        message = 'Cierra el día fuerte. Nada de picar entre horas.';
+        message = 'Cierra el día fuerte. Última comida antes de las 8PM.';
         tasks = [
-          { id: 'm3', label: 'Cena de Proteína (Pollo + Verduras)', time: '20:00', completed: false, type: 'meal' },
-          { id: 'p1', label: 'Preparar ropa mañana', time: '21:00', completed: false, type: 'workout' },
+          { id: 'w_check', label: `Entreno: ${todayWorkout}`, time: '6:00 AM', completed: false, type: 'workout' },
+          { id: 'm1', label: 'Comida 1: Huevos + frijoles', time: '14:00', completed: false, type: 'meal' },
+          { id: 'm2', label: 'Comida 2: 350g pollo + verduras', time: '19:00 - 20:00', completed: false, type: 'meal' },
+          { id: 'cutoff', label: 'Cerrar cocina (inicia ayuno)', time: '20:00', completed: false, type: 'meal' },
+          ...baseTasks,
         ];
       } else {
         block = 'night';
         greeting = 'Descansa.';
         message = 'El sueño es parte del entrenamiento. 7 horas mínimo.';
         tasks = [
-          { id: 's1', label: 'Dormir (Recuperación)', time: '22:00', completed: false, type: 'sleep' },
+          { id: 'w_check', label: `Entreno: ${todayWorkout}`, time: '6:00 AM', completed: false, type: 'workout' },
+          { id: 'm1', label: 'Comida 1 completada', time: '14:00', completed: false, type: 'meal' },
+          { id: 'm2', label: 'Comida 2 completada', time: '20:00', completed: false, type: 'meal' },
+          { id: 'ayuno_noche', label: 'Ayuno nocturno activo', time: '20:00 - 14:00', completed: false, type: 'meal' },
+          ...baseTasks,
         ];
       }
 
