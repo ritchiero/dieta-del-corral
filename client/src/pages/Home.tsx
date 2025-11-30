@@ -5,16 +5,89 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import MotivationCheck from "@/components/MotivationCheck";
 import CalendarSync from "@/components/CalendarSync";
-import { Dumbbell, Utensils, Droplets, Moon, Trophy, CalendarDays } from "lucide-react";
+import { Dumbbell, Utensils, Droplets, Moon, Trophy, CalendarDays, PartyPopper } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useEffect, useRef, useState } from "react";
+import confetti from "canvas-confetti";
 
 export default function Home() {
   const { greeting, message, dateString, tasks } = useCoach();
   const { progress, markTask, getDailyCompletion, startChallenge, getDayProgress, loading } = useProgress();
 
-  const currentDay = 1; // TODO: Calculate current day based on start date
+  // Calcular día actual basado en startDate
+  const calculateCurrentDay = () => {
+    if (!progress.startDate) return 1;
+    const start = new Date(progress.startDate);
+    const now = new Date();
+    // Resetear a medianoche para comparación de días
+    start.setHours(0, 0, 0, 0);
+    now.setHours(0, 0, 0, 0);
+    const diffTime = now.getTime() - start.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    // Limitar entre 1 y totalDays
+    return Math.max(1, Math.min(diffDays, progress.totalDays));
+  };
+
+  const currentDay = calculateCurrentDay();
   const dailyPercentage = getDailyCompletion(currentDay, tasks.length);
   const globalPercentage = (progress.completedDays / progress.totalDays) * 100;
+  
+  // Estado para trackear si ya celebramos hoy
+  const [hasCelebrated, setHasCelebrated] = useState(false);
+  const prevPercentageRef = useRef(dailyPercentage);
+
+  // Celebración con confeti cuando se llega al 100%
+  useEffect(() => {
+    // Solo celebrar si:
+    // 1. El porcentaje es 100%
+    // 2. No hemos celebrado aún
+    // 3. El porcentaje anterior era menor a 100% (evita celebrar al cargar la página)
+    if (dailyPercentage === 100 && !hasCelebrated && prevPercentageRef.current < 100) {
+      // ¡Lanzar confeti!
+      const duration = 3000;
+      const end = Date.now() + duration;
+
+      const colors = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
+
+      (function frame() {
+        confetti({
+          particleCount: 3,
+          angle: 60,
+          spread: 55,
+          origin: { x: 0, y: 0.8 },
+          colors: colors,
+        });
+        confetti({
+          particleCount: 3,
+          angle: 120,
+          spread: 55,
+          origin: { x: 1, y: 0.8 },
+          colors: colors,
+        });
+
+        if (Date.now() < end) {
+          requestAnimationFrame(frame);
+        }
+      })();
+
+      // Confeti central explosivo
+      confetti({
+        particleCount: 100,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: colors,
+      });
+
+      setHasCelebrated(true);
+    }
+
+    // Resetear celebración si el porcentaje baja de 100
+    if (dailyPercentage < 100) {
+      setHasCelebrated(false);
+    }
+
+    prevPercentageRef.current = dailyPercentage;
+  }, [dailyPercentage, hasCelebrated]);
 
   // Si no ha empezado, mostrar botón de inicio
   if (!progress.startDate) {
@@ -69,9 +142,23 @@ export default function Home() {
       <div className="space-y-2">
         <div className="flex justify-between text-sm font-medium">
           <span>Progreso Diario</span>
-          <span>{Math.round(dailyPercentage)}%</span>
+          <span className={cn(dailyPercentage === 100 && "text-green-600 font-bold")}>
+            {Math.round(dailyPercentage)}%
+          </span>
         </div>
-        <Progress value={dailyPercentage} className="h-2" />
+        <Progress 
+          value={dailyPercentage} 
+          className={cn("h-2", dailyPercentage === 100 && "[&>div]:bg-green-600")} 
+        />
+        
+        {/* Mensaje de celebración */}
+        {dailyPercentage === 100 && (
+          <div className="flex items-center justify-center gap-2 py-3 px-4 bg-green-50 border border-green-200 rounded-lg animate-in fade-in zoom-in duration-500">
+            <PartyPopper className="h-5 w-5 text-green-600" />
+            <span className="text-green-700 font-semibold">¡Día completado! Eres imparable.</span>
+            <PartyPopper className="h-5 w-5 text-green-600" />
+          </div>
+        )}
       </div>
 
       {/* Motivation Check */}

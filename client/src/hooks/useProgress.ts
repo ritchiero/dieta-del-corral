@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
 
 interface Task {
   id: string;
@@ -26,6 +27,26 @@ interface GlobalProgress {
   history: DayProgressData[];
 }
 
+const STORAGE_KEY = 'dieta-del-corral-progress';
+
+// Helpers para localStorage
+const getLocalProgress = (): GlobalProgress | null => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+};
+
+const setLocalProgress = (progress: GlobalProgress) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  } catch (e) {
+    console.error('Error saving to localStorage:', e);
+  }
+};
+
 export function useProgress() {
   const { user } = useAuthContext();
   const [progress, setProgress] = useState<GlobalProgress>({
@@ -35,28 +56,24 @@ export function useProgress() {
     history: []
   });
   const [loading, setLoading] = useState(true);
+  const [useLocalStorage, setUseLocalStorage] = useState(false);
 
-  // Load progress from Supabase
-  useEffect(() => {
+  // Load progress - intenta Supabase, fallback a localStorage
+  const loadProgress = useCallback(async () => {
+    setLoading(true);
+    
+    // Si no hay usuario, intentar cargar de localStorage
     if (!user) {
-      setProgress({
-        startDate: null,
-        completedDays: 0,
-        totalDays: 22,
-        history: []
-      });
+      const localProgress = getLocalProgress();
+      if (localProgress) {
+        setProgress(localProgress);
+        setUseLocalStorage(true);
+      }
       setLoading(false);
       return;
     }
 
-    loadProgress();
-  }, [user]);
-
-  const loadProgress = async () => {
-    if (!user) return;
-
     try {
-      setLoading(true);
       const { data, error } = await supabase
         .from('day_progress')
         .select('*')
@@ -69,54 +86,136 @@ export function useProgress() {
       const completedDays = history.filter((d) => d.completed).length;
       const startDate = history.length > 0 ? history[0].created_at : null;
 
-      setProgress({
+      const newProgress = {
         startDate,
         completedDays,
         totalDays: 22,
         history,
-      });
+      };
+      
+      setProgress(newProgress);
+      setUseLocalStorage(false);
     } catch (error) {
-      console.error('Error loading progress:', error);
+      console.warn('Supabase no disponible, usando localStorage:', error);
+      // Fallback a localStorage
+      const localProgress = getLocalProgress();
+      if (localProgress) {
+        setProgress(localProgress);
+      }
+      setUseLocalStorage(true);
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
+
+  useEffect(() => {
+    loadProgress();
+  }, [loadProgress]);
 
   const startChallenge = async () => {
-    if (!user) return;
-
-    const newProgress = {
-      startDate: new Date().toISOString(),
+    const startDate = new Date().toISOString();
+    
+    const newProgress: GlobalProgress = {
+      startDate,
       completedDays: 0,
       totalDays: 22,
       history: []
     };
 
-    setProgress(newProgress);
+    // Intentar guardar en Supabase si hay usuario
+    if (user && !useLocalStorage) {
+      try {
+        const { error } = await supabase
+          .from('day_progress')
+          .insert({
+            user_id: user.id,
+            day: 1,
+            tasks: [],
+            completed: false,
+          });
+
+        if (error) throw error;
+
+        setProgress(newProgress);
+        await loadProgress();
+        toast.success('¡Reto iniciado!', {
+          description: '22 días de disciplina comienzan ahora.',
+        });
+        return;
+      } catch (error) {
+        console.warn('Error en Supabase, guardando localmente:', error);
+      }
+    }
+
+    // Fallback: guardar en localStorage con el día 1 inicializado
+    const progressWithDay1: GlobalProgress = {
+      ...newProgress,
+      history: [{
+        id: 'local-1',
+        user_id: 'local',
+        day: 1,
+        completed: false,
+        completed_at: null,
+        tasks: [],
+        created_at: startDate,
+        updated_at: startDate,
+      }]
+    };
+    setProgress(progressWithDay1);
+    setLocalProgress(progressWithDay1);
+    setUseLocalStorage(true);
+    toast.success('¡Reto iniciado!', {
+      description: '22 días de disciplina comienzan ahora.',
+    });
   };
 
   const markTask = async (day: number, taskId: string, isCompleted: boolean) => {
-    if (!user) return;
-
-    try {
-      // Get current day progress
-      const dayProgress = progress.history.find((d) => d.day === day);
-      
-      let tasks: Task[] = dayProgress?.tasks || [];
-      
-      if (isCompleted) {
-        // Add task if not already completed
-        if (!tasks.find(t => t.id === taskId)) {
-          tasks.push({ id: taskId, title: '', completed: true });
+    // Si usamos localStorage - usar función de actualización para estado más reciente
+    if (useLocalStorage || !user) {
+      setProgress(currentProgress => {
+        const dayProgress = currentProgress.history.find((d) => d.day === day);
+        let tasks: Task[] = dayProgress?.tasks ? [...dayProgress.tasks] : [];
+        
+        if (isCompleted) {
+          if (!tasks.find(t => t.id === taskId)) {
+            tasks.push({ id: taskId, title: '', completed: true });
+          }
+        } else {
+          tasks = tasks.filter(t => t.id !== taskId);
         }
-      } else {
-        // Remove task
-        tasks = tasks.filter(t => t.id !== taskId);
-      }
 
-      // Save to Supabase
+        const updatedHistory = [...currentProgress.history];
+        const existingIndex = updatedHistory.findIndex(d => d.day === day);
+        
+        if (existingIndex >= 0) {
+          updatedHistory[existingIndex] = { ...updatedHistory[existingIndex], tasks };
+        } else {
+          updatedHistory.push({
+            id: `local-${day}`,
+            user_id: 'local',
+            day,
+            completed: false,
+            completed_at: null,
+            tasks,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        }
+
+        const newProgress = { ...currentProgress, history: updatedHistory };
+        setLocalProgress(newProgress);
+        return newProgress;
+      });
+      return;
+    }
+
+    // Supabase
+    const dayProgress = progress.history.find((d) => d.day === day);
+    let tasks: Task[] = dayProgress?.tasks || [];
+
+    // Intentar Supabase
+    try {
       if (dayProgress) {
-        // Update existing record
         const { error } = await supabase
           .from('day_progress')
           .update({ tasks })
@@ -125,7 +224,6 @@ export function useProgress() {
         
         if (error) throw error;
       } else {
-        // Insert new record
         const { error } = await supabase
           .from('day_progress')
           .insert({
@@ -138,16 +236,36 @@ export function useProgress() {
         if (error) throw error;
       }
 
-      // Reload progress
       await loadProgress();
     } catch (error) {
       console.error('Error marking task:', error);
+      toast.error('Error al guardar', {
+        description: 'No se pudo guardar el progreso.',
+      });
     }
   };
 
   const completeDay = async (day: number) => {
-    if (!user) return;
+    // Si usamos localStorage
+    if (useLocalStorage || !user) {
+      const updatedHistory = progress.history.map(d => 
+        d.day === day 
+          ? { ...d, completed: true, completed_at: new Date().toISOString() }
+          : d
+      );
+      const completedDays = updatedHistory.filter(d => d.completed).length;
+      
+      const newProgress = { ...progress, history: updatedHistory, completedDays };
+      setProgress(newProgress);
+      setLocalProgress(newProgress);
+      
+      toast.success(`¡Día ${day} completado!`, {
+        description: `${22 - completedDays} días restantes.`,
+      });
+      return;
+    }
 
+    // Supabase
     try {
       const dayProgress = progress.history.find((d) => d.day === day);
       
@@ -163,11 +281,12 @@ export function useProgress() {
 
         if (error) throw error;
 
-        // Reload progress
         await loadProgress();
+        toast.success(`¡Día ${day} completado!`);
       }
     } catch (error) {
       console.error('Error completing day:', error);
+      toast.error('Error al completar el día');
     }
   };
 

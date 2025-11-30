@@ -43,6 +43,18 @@ export function useCoach() {
       // Definir Rutinas Detalladas (Checklist de Batalla)
       let workoutTasks: DailyTask[] = [];
 
+      // Nombre del entrenamiento del día para mostrar en recordatorios
+      const workoutNames: Record<number, string> = {
+        0: 'Descanso + Meal Prep',
+        1: 'Pecho y Tríceps',
+        2: 'Espalda y Bíceps',
+        3: 'Cardio (Caminata 45 min)',
+        4: 'Pierna',
+        5: 'Hombro y Core',
+        6: 'Cardio + Abdominales',
+      };
+      const todayWorkout = workoutNames[day];
+
       switch (day) {
         case 1: // Lunes (Pecho)
           workoutTasks = [
@@ -111,7 +123,7 @@ export function useCoach() {
         message = 'Mantén el enfoque. Comida 1 es tu combustible.';
         tasks = [
           { id: 'm2', label: 'Romper Ayuno (Huevos + Frijoles)', time: '14:00', completed: false, type: 'meal' },
-          { id: 'w_check', label: '¿Entrenaste hoy?', time: 'Check', completed: false, type: 'workout' }, // Recordatorio por si no lo marcó
+          { id: 'w_check', label: `Hoy toca: ${todayWorkout}`, time: '6:00 AM', completed: false, type: 'workout' },
           { id: 'h1', label: '2 Litros de agua', time: 'Todo el día', completed: false, type: 'water' },
         ];
       } else if (hour >= 18 && hour < 22) {

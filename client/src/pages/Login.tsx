@@ -4,17 +4,23 @@ import { useAuthContext } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
+
+type ViewMode = 'login' | 'signup' | 'forgot';
 
 export default function Login() {
   const [, setLocation] = useLocation();
-  const { user, loading, signIn, signUp } = useAuthContext();
-  const [isSignUp, setIsSignUp] = useState(false);
+  const { user, loading, signIn, signUp, resetPassword } = useAuthContext();
+  const [viewMode, setViewMode] = useState<ViewMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Alias para compatibilidad
+  const isSignUp = viewMode === 'signup';
+  const setIsSignUp = (val: boolean) => setViewMode(val ? 'signup' : 'login');
 
   useEffect(() => {
     if (user && !loading) {
@@ -24,6 +30,22 @@ export default function Login() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (viewMode === 'forgot') {
+      setIsSubmitting(true);
+      try {
+        await resetPassword(email);
+        toast.success('¡Revisa tu email!', {
+          description: 'Te enviamos un enlace para restablecer tu contraseña.',
+        });
+        setViewMode('login');
+      } catch (error: any) {
+        toast.error(error.message || 'Error al enviar email');
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
     
     if (isSignUp && password !== confirmPassword) {
       toast.error('Las contraseñas no coinciden');
@@ -75,13 +97,30 @@ export default function Login() {
         {/* Login Card */}
         <div className="bg-card border border-border rounded-2xl p-8 shadow-lg space-y-6">
           <div className="space-y-2 text-center">
+            {viewMode === 'forgot' && (
+              <button
+                type="button"
+                onClick={() => setViewMode('login')}
+                className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4 mx-auto"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Volver
+              </button>
+            )}
             <h2 className="text-2xl font-semibold">
-              {isSignUp ? 'Crear Cuenta' : 'Bienvenido'}
+              {viewMode === 'forgot' 
+                ? 'Recuperar Contraseña'
+                : isSignUp 
+                  ? 'Crear Cuenta' 
+                  : 'Bienvenido'
+              }
             </h2>
             <p className="text-sm text-muted-foreground">
-              {isSignUp 
-                ? 'Regístrate para comenzar tu transformación'
-                : 'Inicia sesión para continuar tu progreso'
+              {viewMode === 'forgot'
+                ? 'Te enviaremos un enlace para restablecer tu contraseña'
+                : isSignUp 
+                  ? 'Regístrate para comenzar tu transformación'
+                  : 'Inicia sesión para continuar tu progreso'
               }
             </p>
           </div>
@@ -100,19 +139,32 @@ export default function Login() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password">Contraseña</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                disabled={isSubmitting}
-                minLength={6}
-              />
-            </div>
+            {viewMode !== 'forgot' && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Contraseña</Label>
+                  {viewMode === 'login' && (
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('forgot')}
+                      className="text-xs text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      ¿Olvidaste tu contraseña?
+                    </button>
+                  )}
+                </div>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={isSubmitting}
+                  minLength={6}
+                />
+              </div>
+            )}
 
             {isSignUp && (
               <div className="space-y-2">
@@ -139,27 +191,38 @@ export default function Login() {
               {isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  {isSignUp ? 'Creando cuenta...' : 'Iniciando sesión...'}
+                  {viewMode === 'forgot' 
+                    ? 'Enviando...' 
+                    : isSignUp 
+                      ? 'Creando cuenta...' 
+                      : 'Iniciando sesión...'
+                  }
                 </>
               ) : (
-                isSignUp ? 'Crear Cuenta' : 'Iniciar Sesión'
+                viewMode === 'forgot'
+                  ? 'Enviar Enlace'
+                  : isSignUp 
+                    ? 'Crear Cuenta' 
+                    : 'Iniciar Sesión'
               )}
             </Button>
           </form>
 
-          <div className="text-center">
-            <button
-              type="button"
-              onClick={() => setIsSignUp(!isSignUp)}
-              className="text-sm text-primary hover:underline"
-              disabled={isSubmitting}
-            >
-              {isSignUp 
-                ? '¿Ya tienes cuenta? Inicia sesión'
-                : '¿No tienes cuenta? Regístrate'
-              }
-            </button>
-          </div>
+          {viewMode !== 'forgot' && (
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => setIsSignUp(!isSignUp)}
+                className="text-sm text-primary hover:underline"
+                disabled={isSubmitting}
+              >
+                {isSignUp 
+                  ? '¿Ya tienes cuenta? Inicia sesión'
+                  : '¿No tienes cuenta? Regístrate'
+                }
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
