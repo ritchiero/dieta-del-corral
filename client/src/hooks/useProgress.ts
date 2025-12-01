@@ -62,6 +62,30 @@ export function useProgress() {
   const [loading, setLoading] = useState(true);
   const [useLocalStorage, setUseLocalStorage] = useState(false);
 
+  // Iniciar reto automáticamente (usado internamente)
+  const autoStartChallenge = useCallback(async (userId: string) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startDate = today.toISOString();
+
+    try {
+      // Crear entrada en challenge_info
+      await supabase
+        .from('challenge_info')
+        .upsert({ user_id: userId, start_date: startDate });
+
+      // Crear día 1
+      await supabase
+        .from('day_progress')
+        .upsert({ user_id: userId, day: 1, tasks: [], completed: false });
+
+      return startDate;
+    } catch (error) {
+      console.warn('Error auto-iniciando reto:', error);
+      return startDate; // Retornar fecha aunque falle Supabase
+    }
+  }, []);
+
   // Load progress - intenta Supabase, fallback a localStorage
   const loadProgress = useCallback(async () => {
     setLoading(true);
@@ -69,7 +93,7 @@ export function useProgress() {
     // Si no hay usuario, usar localStorage
     if (!user) {
       const localProgress = getLocalProgress();
-      if (localProgress) {
+      if (localProgress && localProgress.startDate) {
         setProgress(localProgress);
         setUseLocalStorage(true);
       }
@@ -85,6 +109,14 @@ export function useProgress() {
         .eq('user_id', user.id)
         .single();
 
+      let startDate = challengeData?.start_date;
+
+      // Si no existe challenge_info, crear automáticamente (usuario nuevo)
+      if (!startDate) {
+        console.log('Usuario nuevo detectado, iniciando reto automáticamente...');
+        startDate = await autoStartChallenge(user.id);
+      }
+
       // Cargar progreso de días
       const { data: progressData, error } = await supabase
         .from('day_progress')
@@ -96,10 +128,6 @@ export function useProgress() {
 
       const history = progressData || [];
       const completedDays = history.filter((d) => d.completed).length;
-      
-      // Usar startDate de challenge_info, o del primer registro, o null
-      const startDate = challengeData?.start_date || 
-                       (history.length > 0 ? history[0].created_at : null);
 
       const newProgress = {
         startDate,
@@ -109,19 +137,40 @@ export function useProgress() {
       };
       
       setProgress(newProgress);
-      setLocalProgress(newProgress); // Sincronizar con localStorage
+      setLocalProgress(newProgress);
       setUseLocalStorage(false);
     } catch (error) {
       console.warn('Supabase no disponible, usando localStorage:', error);
       const localProgress = getLocalProgress();
-      if (localProgress) {
+      if (localProgress && localProgress.startDate) {
         setProgress(localProgress);
+      } else {
+        // Si no hay localStorage, iniciar con fecha de hoy
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const newProgress: GlobalProgress = {
+          startDate: today.toISOString(),
+          completedDays: 0,
+          totalDays: 22,
+          history: [{
+            id: 'local-1',
+            user_id: 'local',
+            day: 1,
+            completed: false,
+            completed_at: null,
+            tasks: [],
+            created_at: today.toISOString(),
+            updated_at: today.toISOString(),
+          }]
+        };
+        setProgress(newProgress);
+        setLocalProgress(newProgress);
       }
       setUseLocalStorage(true);
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, autoStartChallenge]);
 
   useEffect(() => {
     loadProgress();

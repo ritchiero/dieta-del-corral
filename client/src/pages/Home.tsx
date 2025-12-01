@@ -75,18 +75,12 @@ export default function Home() {
     prevPercentageRef.current = dailyPercentage;
   }, [dailyPercentage, hasCelebrated]);
 
-  // Si no ha empezado, mostrar botón de inicio
-  if (!progress.startDate) {
+  // Mientras carga, mostrar spinner
+  if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[80vh] p-6 text-center space-y-8">
-        <h1 className="text-4xl font-serif font-bold">La Dieta del Corral</h1>
-        <p className="text-muted-foreground text-lg">22 días de disciplina innegociable.</p>
-        <button 
-          onClick={startChallenge}
-          className="bg-primary text-primary-foreground px-8 py-4 rounded-full text-xl font-bold shadow-lg hover:scale-105 transition-transform"
-        >
-          INICIAR RETO
-        </button>
+      <div className="flex flex-col items-center justify-center min-h-[80vh] p-6 text-center space-y-4">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <p className="text-muted-foreground">Cargando tu progreso...</p>
       </div>
     );
   }
@@ -110,7 +104,7 @@ export default function Home() {
               <Trophy className="h-3 w-3" /> Progreso Global
             </p>
             <p className="text-2xl font-bold font-serif">
-              Día {progress.completedDays + 1} <span className="text-muted-foreground text-sm font-sans font-normal">/ {progress.totalDays}</span>
+              Día {currentDay} <span className="text-muted-foreground text-sm font-sans font-normal">/ {progress.totalDays}</span>
             </p>
           </div>
           <div className="h-12 w-12 relative flex items-center justify-center">
