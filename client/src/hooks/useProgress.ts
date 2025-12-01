@@ -308,29 +308,50 @@ export function useProgress() {
       // Guardar en localStorage inmediatamente
       setLocalProgress(newProgress);
       
-      // Intentar sincronizar con Supabase en background (sin bloquear UI)
+      // Intentar sincronizar con Supabase en background
       if (user && !useLocalStorage) {
         const syncToSupabase = async () => {
+          console.log('[syncToSupabase] Iniciando sync para día', day, 'user:', user.id);
           try {
             const existingDay = currentProgress.history.find((d) => d.day === day);
+            console.log('[syncToSupabase] existingDay:', existingDay);
+            
             if (existingDay && !existingDay.id.startsWith('local-')) {
-              await supabase
+              console.log('[syncToSupabase] UPDATE existente');
+              const { data, error } = await supabase
                 .from('day_progress')
-                .update({ tasks })
+                .update({ tasks, updated_at: new Date().toISOString() })
                 .eq('user_id', user.id)
-                .eq('day', day);
+                .eq('day', day)
+                .select();
+              
+              if (error) {
+                console.error('[syncToSupabase] ERROR en UPDATE:', JSON.stringify(error, null, 2));
+                throw error;
+              }
+              console.log('[syncToSupabase] UPDATE exitoso:', data);
             } else {
-              await supabase
+              console.log('[syncToSupabase] UPSERT nuevo');
+              const { data, error } = await supabase
                 .from('day_progress')
                 .upsert({
                   user_id: user.id,
                   day,
                   tasks,
                   completed: false,
-                }, { onConflict: 'user_id,day' });
+                }, { onConflict: 'user_id,day' })
+                .select();
+              
+              if (error) {
+                console.error('[syncToSupabase] ERROR en UPSERT:', JSON.stringify(error, null, 2));
+                throw error;
+              }
+              console.log('[syncToSupabase] UPSERT exitoso:', data);
             }
-          } catch (e) {
-            console.warn('Sync to Supabase failed, using localStorage:', e);
+            toast.success('✓ Guardado en la nube', { duration: 1500 });
+          } catch (e: any) {
+            console.error('[syncToSupabase] FALLO TOTAL:', e);
+            toast.error('Error guardando en Supabase: ' + (e.message || 'Desconocido'));
           }
         };
         syncToSupabase();
