@@ -29,7 +29,6 @@ const formatDate = (date: Date) => {
 };
 
 export default function Home() {
-  const { greeting, message, tasks } = useCoach();
   const { progress, markTask, getDailyCompletion, getDayProgress, getCurrentChallengeDay, loading } = useProgress();
 
   const currentDay = getCurrentChallengeDay();
@@ -42,6 +41,9 @@ export default function Home() {
 
   const selectedDate = getDateForDay(selectedDay);
   const dateString = formatDate(selectedDate);
+  
+  // Pasar el día del reto a useCoach para que calcule las tareas correctas
+  const { greeting, message, tasks } = useCoach(selectedDay);
   
   // Calcular progreso del día seleccionado
   const dailyPercentage = getDailyCompletion(selectedDay, tasks.length);
