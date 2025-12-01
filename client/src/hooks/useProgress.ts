@@ -409,27 +409,21 @@ export function useProgress() {
   };
 
   // Calcular día actual del reto
+  // FECHA DE INICIO FIJA: 30 de noviembre de 2025
   const getCurrentChallengeDay = () => {
-    if (!progress.startDate) {
-      console.log('[getCurrentChallengeDay] No startDate, returning 1');
-      return 1;
-    }
-    const start = new Date(progress.startDate);
+    // El reto comenzó el 30 de noviembre de 2025 (en timezone local)
+    const CHALLENGE_START = new Date(2025, 10, 30); // Mes es 0-indexed: 10 = noviembre
     const now = new Date();
-    start.setHours(0, 0, 0, 0);
+    
+    // Resetear ambas a medianoche
+    CHALLENGE_START.setHours(0, 0, 0, 0);
     now.setHours(0, 0, 0, 0);
-    const diffTime = now.getTime() - start.getTime();
+    
+    const diffTime = now.getTime() - CHALLENGE_START.getTime();
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
-    const result = Math.max(1, Math.min(diffDays, progress.totalDays));
-    console.log('[getCurrentChallengeDay]', { 
-      startDate: progress.startDate, 
-      start: start.toISOString(),
-      now: now.toISOString(),
-      diffTime, 
-      diffDays, 
-      result 
-    });
-    return result;
+    
+    // Día 1 = 30 nov, Día 2 = 1 dic, Día 3 = 2 dic, etc.
+    return Math.max(1, Math.min(diffDays, 22));
   };
 
   return {
