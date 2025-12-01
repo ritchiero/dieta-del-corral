@@ -49,11 +49,15 @@ const setLocalProgress = (progress: GlobalProgress) => {
 
 export function useProgress() {
   const { user } = useAuthContext();
-  const [progress, setProgress] = useState<GlobalProgress>({
-    startDate: null,
-    completedDays: 0,
-    totalDays: 22,
-    history: []
+  const [progress, setProgress] = useState<GlobalProgress>(() => {
+    // Inicializar desde localStorage si existe
+    const local = getLocalProgress();
+    return local || {
+      startDate: null,
+      completedDays: 0,
+      totalDays: 22,
+      history: []
+    };
   });
   const [loading, setLoading] = useState(true);
   const [useLocalStorage, setUseLocalStorage] = useState(false);
@@ -62,7 +66,7 @@ export function useProgress() {
   const loadProgress = useCallback(async () => {
     setLoading(true);
     
-    // Si no hay usuario, intentar cargar de localStorage
+    // Si no hay usuario, usar localStorage
     if (!user) {
       const localProgress = getLocalProgress();
       if (localProgress) {
@@ -74,7 +78,15 @@ export function useProgress() {
     }
 
     try {
-      const { data, error } = await supabase
+      // Cargar fecha de inicio desde challenge_info
+      const { data: challengeData } = await supabase
+        .from('challenge_info')
+        .select('start_date')
+        .eq('user_id', user.id)
+        .single();
+
+      // Cargar progreso de días
+      const { data: progressData, error } = await supabase
         .from('day_progress')
         .select('*')
         .eq('user_id', user.id)
@@ -82,9 +94,12 @@ export function useProgress() {
 
       if (error) throw error;
 
-      const history = data || [];
+      const history = progressData || [];
       const completedDays = history.filter((d) => d.completed).length;
-      const startDate = history.length > 0 ? history[0].created_at : null;
+      
+      // Usar startDate de challenge_info, o del primer registro, o null
+      const startDate = challengeData?.start_date || 
+                       (history.length > 0 ? history[0].created_at : null);
 
       const newProgress = {
         startDate,
@@ -94,10 +109,10 @@ export function useProgress() {
       };
       
       setProgress(newProgress);
+      setLocalProgress(newProgress); // Sincronizar con localStorage
       setUseLocalStorage(false);
     } catch (error) {
       console.warn('Supabase no disponible, usando localStorage:', error);
-      // Fallback a localStorage
       const localProgress = getLocalProgress();
       if (localProgress) {
         setProgress(localProgress);
@@ -113,7 +128,10 @@ export function useProgress() {
   }, [loadProgress]);
 
   const startChallenge = async () => {
-    const startDate = new Date().toISOString();
+    // Usar medianoche de hoy como fecha de inicio
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startDate = today.toISOString();
     
     const newProgress: GlobalProgress = {
       startDate,
@@ -125,7 +143,18 @@ export function useProgress() {
     // Intentar guardar en Supabase si hay usuario
     if (user && !useLocalStorage) {
       try {
-        const { error } = await supabase
+        // Guardar fecha de inicio en challenge_info
+        const { error: challengeError } = await supabase
+          .from('challenge_info')
+          .upsert({
+            user_id: user.id,
+            start_date: startDate,
+          });
+
+        if (challengeError) throw challengeError;
+
+        // Crear registro del día 1
+        const { error: dayError } = await supabase
           .from('day_progress')
           .insert({
             user_id: user.id,
@@ -134,9 +163,8 @@ export function useProgress() {
             completed: false,
           });
 
-        if (error) throw error;
+        if (dayError) throw dayError;
 
-        setProgress(newProgress);
         await loadProgress();
         toast.success('¡Reto iniciado!', {
           description: '22 días de disciplina comienzan ahora.',
@@ -147,7 +175,7 @@ export function useProgress() {
       }
     }
 
-    // Fallback: guardar en localStorage con el día 1 inicializado
+    // Fallback: guardar en localStorage
     const progressWithDay1: GlobalProgress = {
       ...newProgress,
       history: [{
@@ -170,7 +198,7 @@ export function useProgress() {
   };
 
   const markTask = async (day: number, taskId: string, isCompleted: boolean) => {
-    // Si usamos localStorage - usar función de actualización para estado más reciente
+    // Si usamos localStorage
     if (useLocalStorage || !user) {
       setProgress(currentProgress => {
         const dayProgress = currentProgress.history.find((d) => d.day === day);
@@ -212,8 +240,15 @@ export function useProgress() {
     // Supabase
     const dayProgress = progress.history.find((d) => d.day === day);
     let tasks: Task[] = dayProgress?.tasks || [];
+    
+    if (isCompleted) {
+      if (!tasks.find(t => t.id === taskId)) {
+        tasks = [...tasks, { id: taskId, title: '', completed: true }];
+      }
+    } else {
+      tasks = tasks.filter(t => t.id !== taskId);
+    }
 
-    // Intentar Supabase
     try {
       if (dayProgress) {
         const { error } = await supabase
@@ -246,7 +281,6 @@ export function useProgress() {
   };
 
   const completeDay = async (day: number) => {
-    // Si usamos localStorage
     if (useLocalStorage || !user) {
       const updatedHistory = progress.history.map(d => 
         d.day === day 
@@ -265,7 +299,6 @@ export function useProgress() {
       return;
     }
 
-    // Supabase
     try {
       const dayProgress = progress.history.find((d) => d.day === day);
       
@@ -301,6 +334,18 @@ export function useProgress() {
     return progress.history.find((p) => p.day === day);
   };
 
+  // Calcular día actual del reto
+  const getCurrentChallengeDay = () => {
+    if (!progress.startDate) return 1;
+    const start = new Date(progress.startDate);
+    const now = new Date();
+    start.setHours(0, 0, 0, 0);
+    now.setHours(0, 0, 0, 0);
+    const diffTime = now.getTime() - start.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    return Math.max(1, Math.min(diffDays, progress.totalDays));
+  };
+
   return {
     progress,
     loading,
@@ -309,6 +354,7 @@ export function useProgress() {
     completeDay,
     getDailyCompletion,
     getDayProgress,
+    getCurrentChallengeDay,
     refreshProgress: loadProgress,
   };
 }

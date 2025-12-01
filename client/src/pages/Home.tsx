@@ -12,23 +12,9 @@ import confetti from "canvas-confetti";
 
 export default function Home() {
   const { greeting, message, dateString, tasks } = useCoach();
-  const { progress, markTask, getDailyCompletion, startChallenge, getDayProgress, loading } = useProgress();
+  const { progress, markTask, getDailyCompletion, startChallenge, getDayProgress, getCurrentChallengeDay, loading } = useProgress();
 
-  // Calcular día actual basado en startDate
-  const calculateCurrentDay = () => {
-    if (!progress.startDate) return 1;
-    const start = new Date(progress.startDate);
-    const now = new Date();
-    // Resetear a medianoche para comparación de días
-    start.setHours(0, 0, 0, 0);
-    now.setHours(0, 0, 0, 0);
-    const diffTime = now.getTime() - start.getTime();
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
-    // Limitar entre 1 y totalDays
-    return Math.max(1, Math.min(diffDays, progress.totalDays));
-  };
-
-  const currentDay = calculateCurrentDay();
+  const currentDay = getCurrentChallengeDay();
   const dailyPercentage = getDailyCompletion(currentDay, tasks.length);
   const globalPercentage = (progress.completedDays / progress.totalDays) * 100;
   
