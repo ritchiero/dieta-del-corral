@@ -63,26 +63,59 @@ export function useProgress() {
   const [useLocalStorage, setUseLocalStorage] = useState(false);
 
   // Iniciar reto automáticamente (usado internamente)
-  const autoStartChallenge = useCallback(async (userId: string) => {
+  const autoStartChallenge = useCallback(async (userId: string): Promise<string> => {
+    // Primero verificar si ya existe en localStorage para no sobrescribir
+    const localProgress = getLocalProgress();
+    if (localProgress?.startDate) {
+      console.log('[autoStartChallenge] Usando fecha de localStorage:', localProgress.startDate);
+      return localProgress.startDate;
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const startDate = today.toISOString();
 
     try {
-      // Crear entrada en challenge_info
-      await supabase
+      // Intentar crear entrada en challenge_info
+      const { error: challengeError } = await supabase
         .from('challenge_info')
-        .upsert({ user_id: userId, start_date: startDate });
+        .insert({ user_id: userId, start_date: startDate });
 
-      // Crear día 1
-      await supabase
+      if (challengeError) {
+        console.warn('[autoStartChallenge] Error creando challenge_info:', challengeError);
+      }
+
+      // Intentar crear día 1
+      const { error: dayError } = await supabase
         .from('day_progress')
-        .upsert({ user_id: userId, day: 1, tasks: [], completed: false });
+        .insert({ user_id: userId, day: 1, tasks: [], completed: false });
+
+      if (dayError) {
+        console.warn('[autoStartChallenge] Error creando day_progress:', dayError);
+      }
+
+      // Guardar en localStorage como respaldo
+      const newProgress: GlobalProgress = {
+        startDate,
+        completedDays: 0,
+        totalDays: 22,
+        history: [{
+          id: 'local-1',
+          user_id: userId,
+          day: 1,
+          completed: false,
+          completed_at: null,
+          tasks: [],
+          created_at: startDate,
+          updated_at: startDate,
+        }]
+      };
+      setLocalProgress(newProgress);
 
       return startDate;
     } catch (error) {
-      console.warn('Error auto-iniciando reto:', error);
-      return startDate; // Retornar fecha aunque falle Supabase
+      console.warn('[autoStartChallenge] Error general:', error);
+      return startDate;
     }
   }, []);
 
@@ -102,19 +135,28 @@ export function useProgress() {
     }
 
     try {
+      // Primero intentar cargar de localStorage como fuente de verdad local
+      const localProgress = getLocalProgress();
+      
       // Cargar fecha de inicio desde challenge_info
-      const { data: challengeData } = await supabase
+      const { data: challengeData, error: challengeError } = await supabase
         .from('challenge_info')
         .select('start_date')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle(); // maybeSingle no lanza error si no hay datos
 
       let startDate = challengeData?.start_date;
-
-      // Si no existe challenge_info, crear automáticamente (usuario nuevo)
-      if (!startDate) {
-        console.log('Usuario nuevo detectado, iniciando reto automáticamente...');
-        startDate = await autoStartChallenge(user.id);
+      
+      // Si hay error o no hay datos en Supabase, usar localStorage
+      if (challengeError || !startDate) {
+        if (localProgress?.startDate) {
+          console.log('[loadProgress] Usando startDate de localStorage:', localProgress.startDate);
+          startDate = localProgress.startDate;
+        } else {
+          // Solo crear nuevo si no hay NADA
+          console.log('[loadProgress] Usuario nuevo, iniciando reto...');
+          startDate = await autoStartChallenge(user.id);
+        }
       }
 
       // Cargar progreso de días
@@ -141,31 +183,14 @@ export function useProgress() {
       setUseLocalStorage(false);
     } catch (error) {
       console.warn('Supabase no disponible, usando localStorage:', error);
+      // SIEMPRE intentar usar localStorage primero para preservar la fecha original
       const localProgress = getLocalProgress();
       if (localProgress && localProgress.startDate) {
         setProgress(localProgress);
-      } else {
-        // Si no hay localStorage, iniciar con fecha de hoy
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const newProgress: GlobalProgress = {
-          startDate: today.toISOString(),
-          completedDays: 0,
-          totalDays: 22,
-          history: [{
-            id: 'local-1',
-            user_id: 'local',
-            day: 1,
-            completed: false,
-            completed_at: null,
-            tasks: [],
-            created_at: today.toISOString(),
-            updated_at: today.toISOString(),
-          }]
-        };
-        setProgress(newProgress);
-        setLocalProgress(newProgress);
+        setUseLocalStorage(true);
       }
+      // Si no hay localStorage, NO crear uno nuevo aquí - esperar a que Supabase funcione
+      // o que el usuario inicie sesión correctamente
       setUseLocalStorage(true);
     } finally {
       setLoading(false);
@@ -385,14 +410,26 @@ export function useProgress() {
 
   // Calcular día actual del reto
   const getCurrentChallengeDay = () => {
-    if (!progress.startDate) return 1;
+    if (!progress.startDate) {
+      console.log('[getCurrentChallengeDay] No startDate, returning 1');
+      return 1;
+    }
     const start = new Date(progress.startDate);
     const now = new Date();
     start.setHours(0, 0, 0, 0);
     now.setHours(0, 0, 0, 0);
     const diffTime = now.getTime() - start.getTime();
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
-    return Math.max(1, Math.min(diffDays, progress.totalDays));
+    const result = Math.max(1, Math.min(diffDays, progress.totalDays));
+    console.log('[getCurrentChallengeDay]', { 
+      startDate: progress.startDate, 
+      start: start.toISOString(),
+      now: now.toISOString(),
+      diffTime, 
+      diffDays, 
+      result 
+    });
+    return result;
   };
 
   return {
