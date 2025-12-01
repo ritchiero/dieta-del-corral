@@ -271,87 +271,73 @@ export function useProgress() {
     });
   };
 
-  const markTask = async (day: number, taskId: string, isCompleted: boolean) => {
-    // Si usamos localStorage
-    if (useLocalStorage || !user) {
-      setProgress(currentProgress => {
-        const dayProgress = currentProgress.history.find((d) => d.day === day);
-        let tasks: Task[] = dayProgress?.tasks ? [...dayProgress.tasks] : [];
-        
-        if (isCompleted) {
-          if (!tasks.find(t => t.id === taskId)) {
-            tasks.push({ id: taskId, title: '', completed: true });
-          }
-        } else {
-          tasks = tasks.filter(t => t.id !== taskId);
+  const markTask = (day: number, taskId: string, isCompleted: boolean) => {
+    // SIEMPRE actualizar estado local primero (optimistic update)
+    setProgress(currentProgress => {
+      const dayProgress = currentProgress.history.find((d) => d.day === day);
+      let tasks: Task[] = dayProgress?.tasks ? [...dayProgress.tasks] : [];
+      
+      if (isCompleted) {
+        if (!tasks.find(t => t.id === taskId)) {
+          tasks.push({ id: taskId, title: '', completed: true });
         }
-
-        const updatedHistory = [...currentProgress.history];
-        const existingIndex = updatedHistory.findIndex(d => d.day === day);
-        
-        if (existingIndex >= 0) {
-          updatedHistory[existingIndex] = { ...updatedHistory[existingIndex], tasks };
-        } else {
-          updatedHistory.push({
-            id: `local-${day}`,
-            user_id: 'local',
-            day,
-            completed: false,
-            completed_at: null,
-            tasks,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          });
-        }
-
-        const newProgress = { ...currentProgress, history: updatedHistory };
-        setLocalProgress(newProgress);
-        return newProgress;
-      });
-      return;
-    }
-
-    // Supabase
-    const dayProgress = progress.history.find((d) => d.day === day);
-    let tasks: Task[] = dayProgress?.tasks || [];
-    
-    if (isCompleted) {
-      if (!tasks.find(t => t.id === taskId)) {
-        tasks = [...tasks, { id: taskId, title: '', completed: true }];
-      }
-    } else {
-      tasks = tasks.filter(t => t.id !== taskId);
-    }
-
-    try {
-      if (dayProgress) {
-        const { error } = await supabase
-          .from('day_progress')
-          .update({ tasks })
-          .eq('user_id', user.id)
-          .eq('day', day);
-        
-        if (error) throw error;
       } else {
-        const { error } = await supabase
-          .from('day_progress')
-          .insert({
-            user_id: user.id,
-            day,
-            tasks,
-            completed: false,
-          });
-        
-        if (error) throw error;
+        tasks = tasks.filter(t => t.id !== taskId);
       }
 
-      await loadProgress();
-    } catch (error) {
-      console.error('Error marking task:', error);
-      toast.error('Error al guardar', {
-        description: 'No se pudo guardar el progreso.',
-      });
-    }
+      const updatedHistory = [...currentProgress.history];
+      const existingIndex = updatedHistory.findIndex(d => d.day === day);
+      
+      if (existingIndex >= 0) {
+        updatedHistory[existingIndex] = { ...updatedHistory[existingIndex], tasks };
+      } else {
+        updatedHistory.push({
+          id: `local-${day}`,
+          user_id: user?.id || 'local',
+          day,
+          completed: false,
+          completed_at: null,
+          tasks,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      const newProgress = { ...currentProgress, history: updatedHistory };
+      
+      // Guardar en localStorage inmediatamente
+      setLocalProgress(newProgress);
+      
+      // Intentar sincronizar con Supabase en background (sin bloquear UI)
+      if (user && !useLocalStorage) {
+        const syncToSupabase = async () => {
+          try {
+            const existingDay = currentProgress.history.find((d) => d.day === day);
+            if (existingDay && !existingDay.id.startsWith('local-')) {
+              await supabase
+                .from('day_progress')
+                .update({ tasks })
+                .eq('user_id', user.id)
+                .eq('day', day);
+            } else {
+              await supabase
+                .from('day_progress')
+                .upsert({
+                  user_id: user.id,
+                  day,
+                  tasks,
+                  completed: false,
+                }, { onConflict: 'user_id,day' });
+            }
+          } catch (e) {
+            console.warn('Sync to Supabase failed, using localStorage:', e);
+          }
+        };
+        syncToSupabase();
+      }
+      
+      return newProgress;
+    });
   };
 
   const completeDay = async (day: number) => {
